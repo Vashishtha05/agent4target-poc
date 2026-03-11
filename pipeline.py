@@ -1,34 +1,41 @@
-from collector import collect
+# pipeline.py
+# Main entry point. Runs the full pipeline:
+# Collect (PHAROS) → Enrich (DepMap) → Normalize → Score → Rank
+
+from pharos_collector import collect
+from depmap_collector import enrich
+from normalizer import normalize
 from scorer import score
 
-# Test genes — mix of well-known druggable (Tclin) and less studied targets
 GENES = ["EGFR", "BRAF", "TP53", "TNF", "IL6", "VEGFA", "BRCA1"]
 
 def run_pipeline(genes: list) -> list:
-    """
-    Full pipeline:
-      1. Collect — fetch evidence from PHAROS for each gene
-      2. Score   — compute druggability score per gene
-      3. Rank    — sort by score descending
-    """
     results = []
 
-    print("\n Collecting evidence from PHAROS...")
-    print("-" * 40)
+    print("\n Running Agent4Target Pipeline")
+    print("=" * 50)
 
     for gene in genes:
-        print(f"  Fetching: {gene}")
+        print(f"\n Processing: {gene}")
 
-        # Step 1 — Collect
+        # Step 1 — Collect from PHAROS
+        print(f"  Fetching PHAROS...")
         evidence = collect(gene)
         if evidence is None:
             continue
 
-        # Step 2 — Score
+        # Step 2 — Enrich with DepMap
+        print(f"  Fetching DepMap...")
+        evidence = enrich(evidence)
+
+        # Step 3 — Normalize signals
+        evidence = normalize(evidence)
+
+        # Step 4 — Score
         evidence = score(evidence)
         results.append(evidence)
 
-    # Step 3 — Rank
+    # Step 5 — Rank
     results.sort(key=lambda x: x.druggability_score, reverse=True)
     for i, r in enumerate(results, 1):
         r.rank = i
@@ -37,30 +44,37 @@ def run_pipeline(genes: list) -> list:
 
 
 def print_results(results: list):
-    """Prints ranked results as a clean table."""
-
     if not results:
-        print("\nNo results available. All fetches failed or returned no data.\n")
+        print("\n No results returned.\n")
         return
 
-    print("\n RANKED DRUGGABILITY SCORES")
-    print("=" * 65)
-    print(f"{'Rank':<6} {'Gene':<10} {'Tier':<8} {'Drugs':<8} {'PPI':<8} {'Score':<8}")
-    print("-" * 65)
+    print("\n\n FINAL RANKED DRUGGABILITY SCORES")
+    print("=" * 80)
+    print(f"{'Rank':<6} {'Gene':<10} {'Tier':<8} {'Drugs':<8} "
+          f"{'PPI':<8} {'DepMap':<10} {'Score':<8}")
+    print("-" * 80)
 
     for r in results:
+        depmap_display = (
+            f"{r.depmap_score:.3f}"
+            if r.depmap_score is not None
+            else "N/A"
+        )
         print(
             f"{r.rank:<6} "
             f"{r.gene_symbol:<10} "
             f"{r.pharos_tier:<8} "
             f"{r.drug_count:<8} "
             f"{r.ppi_count:<8} "
+            f"{depmap_display:<10} "
             f"{r.druggability_score:<8}"
         )
 
-    print("=" * 65)
+    print("=" * 80)
     print(f"\n Top target: {results[0].gene_symbol} "
-          f"(Score: {results[0].druggability_score})\n")
+          f"(Score: {results[0].druggability_score})")
+    print(f" DepMap most dependent: "
+          f"{min(results, key=lambda x: x.depmap_score or 0).gene_symbol}\n")
 
 
 if __name__ == "__main__":

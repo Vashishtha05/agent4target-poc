@@ -1,0 +1,9 @@
+CRISPRGeneEffect.csv
+data/
+cache/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
