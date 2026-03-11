@@ -21,13 +21,8 @@ Each source is a separate collector module. Adding a new source (e.g. Open Targe
 
 ---
 
-## Sample Output
-
-```
-<img width="610" height="268" alt="image" src="https://github.com/user-attachments/assets/aa95a7d1-ae64-44e3-b664-87444d1c8c21" />
-
-```
-
+## Sample Output 
+<img width="600" height="273" alt="image" src="https://github.com/user-attachments/assets/f7ee8acd-ed30-429e-b4b2-0796138e80b6" />
 ---
 
 ## What I Noticed
