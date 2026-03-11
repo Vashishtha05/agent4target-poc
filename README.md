@@ -33,5 +33,5 @@ python pipeline.py
 
 Scoring logic derived from:
 
-> DrugnomeAI: An ensemble ML framework for predicting druggability
-> of candidate drug targets. Raies et al., Communications Biology 2022.
+DrugnomeAI: An ensemble ML framework for predicting druggability
+of candidate drug targets. Raies et al., Communications Biology 2022.
