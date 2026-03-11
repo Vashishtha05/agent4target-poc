@@ -1,12 +1,7 @@
-# pipeline.py
-# The main entry point. Runs the full collect → score → rank pipeline.
-# This is what Ziheng's "structured pipeline" looks like in code.
-
 from collector import collect
 from scorer import score
 
 # Test genes — mix of well-known druggable (Tclin) and less studied targets
-# Chosen to demonstrate score spread across tiers
 GENES = ["EGFR", "BRAF", "TP53", "TNF", "IL6", "VEGFA", "BRCA1"]
 
 def run_pipeline(genes: list) -> list:
