@@ -101,8 +101,7 @@ python pipeline.py
 ## Notes
 
 Kept collector and scorer as separate modules so adding a new 
-source means writing one new file — nothing else changes. 
-Ziheng suggested this direction and it made sense architecturally.
+source means writing one new file.
 
 DepMap is loaded from a local file rather than a live API for 
 reproducibility — same input should always give same output.
