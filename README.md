@@ -25,6 +25,8 @@ paper's Boruta feature analysis:
 pip install requests
 python pipeline.py
 ```
+## Sample Output 
+<img width="763" height="470" alt="image" src="https://github.com/user-attachments/assets/69affb8e-1f0c-49a4-937a-c74ed82eff51" />
 
 ## Inspiration
 
