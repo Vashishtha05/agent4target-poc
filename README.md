@@ -26,7 +26,8 @@ pip install requests
 python pipeline.py
 ```
 ## Sample Output 
-<img width="763" height="470" alt="image" src="https://github.com/user-attachments/assets/69affb8e-1f0c-49a4-937a-c74ed82eff51" />
+<img width="695" height="552" alt="image" src="https://github.com/user-attachments/assets/17a07c60-3b2f-4f0b-a5c8-399f74aedebf" />
+
 
 ## Inspiration
 
