@@ -203,12 +203,6 @@ python pipeline.py
 
 ---
 
-## What Is Not Yet Built
-
-The infrastructure for N-source aggregation and cross-source conflict detection is in place. The missing pieces are the actual collectors for Open Targets and literature — which is the core of what the GSoC project will build.
-
----
-
 ## Mentor Exchange
 
 Built iteratively based on feedback from Ziheng Duan (UC Irvine):
