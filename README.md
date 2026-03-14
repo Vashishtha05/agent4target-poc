@@ -1,60 +1,143 @@
 # Agent4Target — Evidence Aggregation POC
 
-A proof-of-concept pipeline for drug target scoring using multiple biomedical evidence sources. Built as part of a GSoC 2026 proposal for the [Agent4Target project](https://ucsc-ospo.github.io/project/osre26/uci/agent4target/) (UC OSPO / UC Irvine).
+A proof-of-concept pipeline for drug target prioritisation using multiple biomedical evidence sources. Built iteratively as part of a GSoC 2026 proposal for the [Agent4Target project](https://ucsc-ospo.github.io/project/osre26/uci/agent4target/) (UC OSPO / UC Irvine).
 
 ---
 
 ## What This Does
 
-Takes a list of gene names and ranks them by druggability score using two evidence sources:
-
-- **PHAROS** — NIH database classifying every human gene by druggability tier
-- **DepMap** — Broad Institute CRISPR dataset showing cancer cell gene dependencies
+Takes a list of gene names and ranks them by druggability score using evidence from multiple biomedical databases. Each source is an independent collector module. The normalizer, scorer, and conflict detector all work generically — adding a new source requires writing one new collector file and one line in the normalizer. Nothing else changes.
 
 ```
 PHAROS Collector ──→ ┐
-                     ├──→ Normalizer ──→ Scorer ──→ Ranked Output
+                     ├──→ Normalizer ──→ Conflict Detector ──→ Scorer ──→ Ranked Output
 DepMap Collector ──→ ┘
 ```
 
-Each source is a separate collector module. Adding a new source (e.g. Open Targets) requires only writing a new collector — the normalizer, scorer, and pipeline don't change.
+---
+
+## Sample Output (V4 — Real Run, 1186 Cell Lines)
+
+```
+Rank  Gene     Tier    Score   Conflict Status
+─────────────────────────────────────────────────────────────────────────────────────
+1     EGFR     Tclin   0.920   None (Complementary)
+2     BRAF     Tclin   0.803   None (Complementary)
+3     VEGFA    Tclin   0.718   MODERATE: Extracellular target — DepMap cell-autonomous signal does not apply
+4     TNF      Tclin   0.711   MODERATE: Extracellular target — DepMap cell-autonomous signal does not apply
+5     BRCA1    Tchem   0.643   None (Complementary)
+6     IL6      Tclin   0.613   MODERATE: Extracellular target — DepMap cell-autonomous signal does not apply
+7     TP53     Tchem   0.500   None (Complementary)
+```
 
 ---
 
-## Sample Output 
-<img width="600" height="273" alt="image" src="https://github.com/user-attachments/assets/f7ee8acd-ed30-429e-b4b2-0796138e80b6" />
+## V4 — What Changed From V2
+
+**V2** collected PHAROS + DepMap and scored them with a fixed formula. Adding a new source required editing the scorer by hand.
+
+**V4** answers two questions Ziheng raised after reviewing V2:
+
+### 1. How does the aggregation handle more heterogeneous sources?
+
+The scorer now loops over every source in `source_data` automatically:
+
+```python
+# scorer.py — works for 2 sources, 3 sources, or 10
+for source_name, source_info in evidence.source_data.items():
+    if "norm" not in source_info:
+        continue
+    weight = SOURCE_WEIGHTS.get(source_name, 1.0)
+    source_total += min(source_info["norm"] * weight, MAX_SOURCE_CONTRIB)
+```
+
+The normalizer maps each source to [0, 1] using a per-source rule:
+
+```python
+# normalizer.py — add one line per new source
+SOURCE_NORMALIZERS = {
+    "depmap":       _norm_depmap,        # clamp [-1, 0] → [0, 1]
+    "open_targets": _norm_open_targets,  # already [0, 1] — pass through
+    "literature":   _norm_literature,    # log-scale, cap at 1000 publications
+}
+```
+
+Adding Open Targets as a third source: write `open_targets_collector.py`, add one entry to `SOURCE_NORMALIZERS`, add one line to `pipeline.py`. `scorer.py`, `schema.py`, `conflict_detector.py` — untouched.
+
+### 2. How does the system handle conflicting signals?
+
+The conflict detector distinguishes three biologically grounded cases:
+
+**Type 1 — Extracellular/mechanism conflict**
+An approved drug exists (Tclin) but the gene product is secreted — cancer cells don't depend on it in a cell-autonomous way. DepMap measures knockout in isolated cell lines and cannot capture extracellular mechanisms. TNF, VEGFA, and IL6 all fall here. Flagged MODERATE.
+
+**Type 2 — Cross-source direction conflict (generic)**
+Two sources measuring overlapping biology give opposite signals. Defined as a rule table — adding a new source pair takes one line:
+
+```python
+# conflict_detector.py
+CROSS_SOURCE_RULES = [
+    # Disease-associated but not cancer-cell-essential
+    ("open_targets", "depmap", 0.65, 0.05,
+     "Disease-associated (Open Targets) but not cancer-essential (DepMap)"),
+
+    # Cancer-essential but poorly studied in literature
+    ("depmap", "literature", 0.50, 0.10,
+     "Cancer-essential (DepMap) but sparse literature evidence"),
+]
+```
+
+**Type 3 — Novel opportunity**
+Understudied protein (Tdark) but strongly cancer-essential (DepMap < −0.5). Not a conflict — flagged as a potential target opportunity.
+
 ---
 
-## What I Noticed
+## Key Findings
 
-Adding DepMap differentiated genes that PHAROS alone couldn't 
-separate — EGFR, BRAF, TNF and VEGFA were all scoring 1.0 
-before DepMap was added.
+**Adding DepMap broke a four-way tie.** EGFR, BRAF, TNF, and VEGFA were all scoring 1.0 on PHAROS tier alone. DepMap separated them.
 
-Most interesting: BRCA1 moved above TP53 once DepMap was 
-factored in. BRCA1 has a mean dependency score of -0.444 
-across cancer cell lines while TP53 sits at +0.373.
+**BRCA1 ranks above TP53.** BRCA1 has a DepMap median of −0.420 across 1186 cancer cell lines — moderately essential. TP53 sits at +0.201 — cancer cells do not depend on it because most lines have already lost TP53 function. A purely literature-based ranking would place TP53 higher due to its 1985 protein interactions. DepMap corrects this.
+
+**Extracellular targets are flagged.** TNF, VEGFA, and IL6 all have approved drugs but DepMap scores near zero. Their drugs work via immune or vascular mechanisms, not by killing cancer cells directly. The conflict detector catches all three consistently.
+
+**Median not mean.** DepMap uses median dependency across cell lines. Mean was being pulled down by outlier cell lines with extreme dependency. EGFR mean = −0.241, median = −0.133.
 
 ---
 
 ## Scoring Logic
 
-Each gene is scored on 4 signals derived from the DrugnomeAI paper's Boruta feature analysis:
-
-| Signal | Source | Max Contribution | Reasoning |
-|---|---|---|---|
-| PHAROS tier | PHAROS | 1.0 | Strongest categorical druggability signal |
-| Drug count | PHAROS | 0.5 | Validated therapeutic precedent |
-| PPI count | PHAROS | 0.3 | #1 network predictor (paper confirmed) |
-| Dependency | DepMap | 0.3 | Functional cancer evidence |
-
 ```
-Score = (tier + drug + ppi + depmap) / 2.1
+Score = (pharos_signals + Σ source_contributions) / max_raw
 ```
+
+`max_raw` scales with the number of sources present, keeping the score in [0, 1] regardless of how many sources are added.
+
+**PHAROS signals:**
+
+| Signal | Max Contribution | Notes |
+|---|---|---|
+| PHAROS tier | 1.0 | Strongest categorical druggability signal |
+| Drug count | 0.5 | Capped at 20 drugs to differentiate highly targeted genes |
+| PPI count | 0.3 | Network centrality — capped to prevent undruggable hub proteins (e.g. TP53) from scoring high |
+
+**External sources (generic — any source contributes automatically once normalised):**
+
+| Source | Weight | Normalisation |
+|---|---|---|
+| DepMap | 1.0 | Clamp [−1, 0] → [0, 1] |
+| Open Targets | 0.8 | Already [0, 1] — pass through |
+| Literature | 0.6 | Log-scale, cap at 1000 publications |
+
+**Conflict penalties:**
+
+| Severity | Multiplier |
+|---|---|
+| SEVERE | × 0.85 |
+| MODERATE | × 0.92 |
 
 ---
 
-## PHAROS Tiers Explained
+## PHAROS Tiers
 
 | Tier | Meaning | Weight |
 |---|---|---|
@@ -69,48 +152,75 @@ Score = (tier + drug + ppi + depmap) / 2.1
 
 ```
 agent4target-poc/
-├── schema.py              # TargetEvidence dataclass — shared data structure
-├── pharos_collector.py    # Fetches evidence from PHAROS GraphQL API (live)
-├── depmap_collector.py    # Reads DepMap CRISPR CSV (local snapshot)
-├── normalizer.py          # Converts raw signals to 0-1 scale
-├── scorer.py              # Aggregates normalized signals into final score
-├── pipeline.py            # Main entry point — runs full collect→score→rank
-└── CRISPRGeneEffect.csv   # DepMap dataset (not tracked in git)
+├── schema.py              # TargetEvidence dataclass — source_data dict is N-source extensible
+├── pharos_collector.py    # PHAROS GraphQL API — tier, drug count, PPI count
+├── depmap_collector.py    # DepMap CRISPR CSV — median dependency across 1186 cell lines
+├── normalizer.py          # Per-source normalisation rules — add one line per new source
+├── conflict_detector.py   # Biologically grounded conflict detection — CROSS_SOURCE_RULES table
+├── scorer.py              # Generic aggregation loop — works for any number of sources
+├── pipeline.py            # collect → normalise → detect → score → rank
+└── CRISPRGeneEffect.csv   # DepMap 25Q3 snapshot (not tracked in git — ~500MB)
 ```
 
-Each file has one responsibility. Adding a new evidence source = add one new collector file. Nothing else changes.
+---
+
+## Adding a New Evidence Source
+
+To add Open Targets as a third source:
+
+**1. Write the collector** (`open_targets_collector.py`, ~40 lines):
+```python
+def enrich(evidence: TargetEvidence) -> TargetEvidence:
+    score = fetch_ot_score(evidence.gene_symbol)
+    evidence.source_data["open_targets"] = {"raw": score}
+    return evidence
+```
+
+**2. Register the normaliser** (one line in `normalizer.py`):
+```python
+"open_targets": _norm_open_targets,
+```
+
+**3. Add to pipeline** (one line in `pipeline.py`):
+```python
+evidence = ot_collector.enrich(evidence)
+```
+
+`scorer.py`, `schema.py`, `conflict_detector.py` — untouched.
 
 ---
 
 ## Setup
 
 ```bash
-# Install dependencies
 pip install requests pandas
 
-# Add DepMap dataset (not included due to file size)
-# Download CRISPRGeneEffect.csv from:
-# https://depmap.org/portal/download/all/ → DepMap Public 25Q3
+# Download DepMap 25Q3 CRISPR gene effect file:
+# https://depmap.org/portal/download/all/ → CRISPRGeneEffect.csv
 
-# Run pipeline
 python pipeline.py
 ```
 
 ---
 
-## Notes
+## What Is Not Yet Built
 
-Kept collector and scorer as separate modules so adding a new 
-source means writing one new file.
+The infrastructure for N-source aggregation and cross-source conflict detection is in place. The missing pieces are the actual collectors for Open Targets and literature — which is the core of what the GSoC project will build.
 
-DepMap is loaded from a local file rather than a live API for 
-reproducibility — same input should always give same output.
+---
+
+## Mentor Exchange
+
+Built iteratively based on feedback from Ziheng Duan (UC Irvine):
+
+- **V1** — PHAROS only. Ziheng suggested adding DepMap and confirmed modular collector/scorer architecture.
+- **V2** — Added DepMap. Ziheng confirmed local snapshot for reproducibility and noted: *"It would be interesting to see how easily additional sources can be plugged in."*
+- **V4** — Generic aggregation and conflict detection across N sources. Adding a new source now requires one new file and two lines.
 
 ---
 
 ## Inspiration
 
-Scoring logic and architecture derived from:
+Scoring logic and source selection derived from:
 *DrugnomeAI is an ensemble machine-learning framework for predicting druggability of candidate drug targets.* Communications Biology, 2022.
 https://doi.org/10.1038/s42003-022-04245-4
-

@@ -29,19 +29,17 @@ def _extract_count(counts: list, preferred_name: str) -> int:
             return item.get("value", 0) or 0
     return max((item.get("value", 0) or 0) for item in counts)
 
+# Simple cache — avoids duplicate API calls for the same gene
+_cache: dict = {}
+
 def collect(gene_symbol: str) -> TargetEvidence:
-    """
-    Fetches PHAROS evidence for a single gene.
-    Returns TargetEvidence with PHAROS fields filled.
-    DepMap fields left as None — filled by depmap_collector.
-    """
+    if gene_symbol in _cache:
+        return _cache[gene_symbol]
+
     try:
         response = requests.post(
             PHAROS_API,
-            json={
-                "query": QUERY,
-                "variables": {"sym": gene_symbol}
-            },
+            json={"query": QUERY, "variables": {"sym": gene_symbol}},
             headers={"Content-Type": "application/json"},
             timeout=10
         )
@@ -56,14 +54,16 @@ def collect(gene_symbol: str) -> TargetEvidence:
         ligand_counts = target.get("ligandCounts") or []
         ppi_counts    = target.get("ppiCounts") or []
 
-        return TargetEvidence(
+        evidence = TargetEvidence(
             gene_symbol = target["sym"],
             gene_name   = target["name"],
             pharos_tier = target["tdl"],
             drug_count  = _extract_count(ligand_counts, "drug"),
             ppi_count   = _extract_count(ppi_counts, "Total"),
         )
-
+        _cache[gene_symbol] = evidence
+        return evidence
     except requests.exceptions.RequestException as e:
         print(f"  [PHAROS ERROR] '{gene_symbol}': {e}")
+        _cache[gene_symbol] = None
         return None

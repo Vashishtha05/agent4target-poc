@@ -10,10 +10,16 @@ class TargetEvidence:
     drug_count: int            
     ppi_count: int             
 
-    # --- DepMap signal ---
-    depmap_score: Optional[float] = None
+    # Extensible storage for any number of heterogeneous sources
+    # Eliminates hardcoded fields so new databases can be added effortlessly.
+    source_data: dict = field(default_factory=dict)
+    
+    # Tracks conflicting signals dynamically
+    conflict_flag: str = "None"
 
-    depmap_score_normalized: float = 0.0
+    # Type-safe severity — used by scorer instead of string matching.
+    # Values: "NONE", "NOTE", "MODERATE", "SEVERE"
+    conflict_severity: str = "NONE"
 
     # --- Computed ---
     druggability_score: float = 0.0
