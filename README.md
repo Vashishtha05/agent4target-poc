@@ -6,7 +6,7 @@ A proof-of-concept pipeline for drug target prioritisation using multiple biomed
 
 ## What This Does
 
-Takes a list of gene names and ranks them by druggability score using evidence from multiple biomedical databases. Each source is an independent collector module. The normalizer, scorer, and conflict detector all work generically — adding a new source requires writing one new collector file and one line in the normalizer. Nothing else changes.
+Takes a list of gene names and ranks them by druggability score using evidence from multiple biomedical databases. Each source is an independent collector module. The normalizer, scorer, and conflict detector all work generically — adding a new source requires writing one new collector file and one line in the normalizer. Nothing else changes..
 
 ```
 PHAROS Collector ──→ ┐
